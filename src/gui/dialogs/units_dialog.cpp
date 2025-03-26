@@ -22,6 +22,7 @@
 #include "gettext.hpp"
 #include "gui/dialogs/edit_text.hpp"
 #include "gui/dialogs/message.hpp"
+#include "gui/dialogs/transient_message.hpp"
 #include "gui/widgets/listbox.hpp"
 #include "gui/widgets/button.hpp"
 #include "gui/widgets/label.hpp"
@@ -248,6 +249,11 @@ void units_dialog::dismiss_unit(std::vector<unit_const_ptr>& unit_list, const te
 
 	const unit& u = *unit_list[selected_index_].get();
 
+	if(!u.dismissable()) {
+		gui2::show_transient_message("", u.block_dismiss_message());
+		return;
+	}
+
 	// If the unit is of level > 1, or is close to advancing, we warn the player about it
 	std::stringstream message;
 	if(u.loyal()) {
@@ -337,11 +343,10 @@ void units_dialog::post_show()
 
 void units_dialog::filter_text_changed(const std::string& text)
 {
-	auto& list = find_widget<listbox>("main_list");
-	const std::size_t shown = list.filter_rows_by([this, &text](std::size_t row) {
-		const auto& match = translation::make_ci_matcher(filter_options_[row]);
-		return match(text);
-	});
+	const std::size_t shown = find_widget<listbox>("main_list")
+		.filter_rows_by([this, match = translation::make_ci_matcher(text)](std::size_t row) {
+			return match(filter_options_[row]);
+		});
 
 	// Disable rename and dismiss buttons if no units are shown
 	find_widget<button>("rename").set_active(shown > 0);

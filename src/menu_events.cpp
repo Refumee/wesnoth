@@ -89,8 +89,8 @@ using namespace gui2::dialogs;
 
 namespace events
 {
-menu_handler::menu_handler(game_display* gui, play_controller& pc)
-	: gui_(gui)
+menu_handler::menu_handler(play_controller& pc)
+	: gui_(nullptr)
 	, pc_(pc)
 	, game_config_(game_config_manager::get()->game_config())
 	, textbox_info_()
@@ -1000,11 +1000,11 @@ void menu_handler::search()
 	textbox_info_.show(gui::TEXTBOX_SEARCH, msg.str(), "", false, *gui_);
 }
 
-void menu_handler::do_speak()
+bool menu_handler::do_speak()
 {
 	// None of the two parameters really needs to be passed since the information belong to members of the class.
 	// But since it makes the called method more generic, it is done anyway.
-	chat_handler::do_speak(
+	return chat_handler::do_speak(
 			textbox_info_.box()->text(), textbox_info_.check() != nullptr ? textbox_info_.check()->checked() : false);
 }
 

@@ -18,9 +18,14 @@
  *  Manage unit-abilities, like heal, cure, and weapon_specials.
  */
 
+#include "deprecation.hpp"
 #include "display.hpp"
 #include "display_context.hpp"
-#include "serialization/markup.hpp"
+#include "filter_context.hpp"
+#include "formula/callable_objects.hpp"
+#include "formula/formula.hpp"
+#include "formula/function_gamestate.hpp"
+#include "formula/string_utils.hpp"
 #include "game_board.hpp"
 #include "game_version.hpp" // for version_info
 #include "gettext.hpp"
@@ -28,20 +33,18 @@
 #include "log.hpp"
 #include "map/map.hpp"
 #include "resources.hpp"
+#include "serialization/markup.hpp"
 #include "team.hpp"
 #include "terrain/filter.hpp"
+#include "units/types.hpp"
 #include "units/unit.hpp"
 #include "units/abilities.hpp"
 #include "units/ability_tags.hpp"
 #include "units/filter.hpp"
 #include "units/map.hpp"
 #include "utils/config_filters.hpp"
-#include "filter_context.hpp"
-#include "formula/callable_objects.hpp"
-#include "formula/formula.hpp"
-#include "formula/function_gamestate.hpp"
 #include "units/filter.hpp"
-#include "deprecation.hpp"
+
 #include <utility>
 
 
@@ -241,8 +244,7 @@ unit_ability_list unit::get_abilities(const std::string& tag_name, const map_loc
 		if ( &*it == this )
 			continue;
 		for(const config& j : it->abilities_.child_range(tag_name)) {
-			if(get_adj_ability_bool(j, tag_name, i, loc,*it))
-			{
+			if(get_adj_ability_bool(j, tag_name, i, loc,*it)) {
 				res.emplace_back(&j, loc, adjacent[i]);
 			}
 		}
@@ -294,9 +296,7 @@ namespace {
 						ab["description"].t_str() );
 				return true;
 			}
-		}
-		else
-		{
+		} else {
 			// See if an inactive name was specified.
 			const config::attribute_value& inactive_value =
 				gender_value(ab, gender, "name_inactive",
@@ -668,7 +668,7 @@ T get_single_ability_value(const config::attribute_value& v, T def, const unit_a
 				if (auto uptr = units.find_unit_ptr(receiver_loc)) {
 					callable.add("other", wfl::variant(std::make_shared<wfl::unit_callable>(*uptr)));
 				}
-				return formula_handler(wfl::formula(s, new wfl::gamestate_function_symbol_table), callable);
+				return formula_handler(wfl::formula(s, new wfl::gamestate_function_symbol_table, true), callable);
 			} catch(const wfl::formula_error& e) {
 				lg::log_to_chat() << "Formula error in ability or weapon special: " << e.type << " at " << e.filename << ':' << e.line << ")\n";
 				ERR_WML << "Formula error in ability or weapon special: " << e.type << " at " << e.filename << ':' << e.line << ")";
@@ -938,21 +938,30 @@ std::vector<std::pair<t_string, t_string>> attack_type::special_tooltips(
 {
 	//log_scope("special_tooltips");
 	std::vector<std::pair<t_string, t_string>> res;
-	if ( active_list )
+	if(active_list) {
 		active_list->clear();
+	}
 
-	for(const auto [key, cfg] : specials_.all_children_view())
-	{
-		if ( !active_list || special_active(cfg, AFFECT_EITHER, key) ) {
-			const t_string &name = cfg["name"];
-			if (!name.empty()) {
-				res.emplace_back(name, cfg["description"].t_str() );
-				if ( active_list )
+	for(const auto [key, cfg] : specials_.all_children_view()) {
+		if(!active_list || special_active(cfg, AFFECT_EITHER, key)) {
+			const t_string& name = cfg["name"];
+			if(!name.empty()) {
+				if(key == "plague") {
+					const unit_type type = unit_types.types().at(cfg["type"].str());
+					res.emplace_back(
+						VGETTEXT(cfg["name"].t_str().c_str(), {{"type", type.type_name()}}),
+						VGETTEXT(cfg["description"].t_str().c_str(), {{"type", type.type_name()}}));
+				} else {
+					res.emplace_back(name, cfg["description"].t_str());
+				}
+
+				if(active_list) {
 					active_list->push_back(true);
+				}
 			}
 		} else {
 			const t_string& name = cfg.get_or("name_inactive", "name").t_str();
-			if (!name.empty()) {
+			if(!name.empty()) {
 				res.emplace_back(name, cfg.get_or("description_inactive", "description").t_str() );
 				active_list->push_back(false);
 			}

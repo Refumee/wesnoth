@@ -261,7 +261,9 @@ public:
 	 * @returns                   The number of lines in the text.
 	 *
 	 */
-	unsigned get_lines_count() const { return pango_layout_get_line_count(layout_.get()); };
+	unsigned get_lines_count() const {
+		return pango_layout_get_line_count(layout_.get());
+	};
 
 	/**
 	 * Gets the length of the text in bytes.
@@ -454,7 +456,7 @@ private:
 	 * This is part of create_surface(viewport). The separation is a legacy
 	 * from workarounds to the size limits of cairo_surface_t.
 	 */
-	void render(PangoLayout& layout, const SDL_Rect& viewport, const unsigned stride);
+	void render(PangoLayout& layout, const SDL_Rect& viewport);
 
 	/**
 	 * Buffer to store the image on.
@@ -525,7 +527,7 @@ pango_text& get_text_renderer();
  *                                font. More specifically, the result is the sum of the maximum
  *                                ascent and descent lengths.
  */
-int get_max_height(unsigned size, font::family_class fclass = font::FONT_SANS_SERIF, pango_text::FONT_STYLE style = pango_text::STYLE_NORMAL);
+int get_max_height(unsigned size, font::family_class fclass = font::family_class::sans_serif, pango_text::FONT_STYLE style = pango_text::STYLE_NORMAL);
 
 /* Returns the default line spacing factor
  * For now hardcoded here */

@@ -17,32 +17,21 @@
 
 #include "gui/dialogs/help_browser.hpp"
 
-#include "game_config_manager.hpp"
 #include "gui/widgets/button.hpp"
-#include "gui/widgets/image.hpp"
 #include "gui/widgets/label.hpp"
 #include "gui/widgets/rich_label.hpp"
 #include "gui/widgets/scroll_label.hpp"
 #include "gui/widgets/scrollbar_panel.hpp"
-#include "gui/widgets/settings.hpp"
 #include "gui/widgets/text_box.hpp"
 #include "gui/widgets/toggle_button.hpp"
 #include "gui/widgets/tree_view.hpp"
 #include "gui/widgets/tree_view_node.hpp"
 #include "gui/widgets/window.hpp"
-#include "log.hpp"
+#include "serialization/string_utils.hpp"
+#include "utils/ci_searcher.hpp"
 #include "video.hpp"
 
-#ifdef GUI2_EXPERIMENTAL_LISTBOX
-#include "gui/widgets/list.hpp"
-#else
-#include "gui/widgets/listbox.hpp"
-#endif
-
 #include "help/help.hpp"
-#include "help/help_impl.hpp"
-#include "font/pango/escape.hpp"
-#include "font/pango/hyperlink.hpp"
 
 namespace gui2::dialogs
 {
@@ -94,6 +83,10 @@ void help_browser::pre_show()
 		contents.set_visible(widget::visibility::invisible);
 	}
 
+	text_box& filter = find_widget<text_box>("filter_box");
+	add_to_keyboard_chain(&filter);
+	filter.on_modified([this](const auto& box) { update_list(box.text()); });
+
 	topic_text.register_link_callback(std::bind(&help_browser::show_topic, this, std::placeholders::_1, true));
 
 	connect_signal_notify_modified(topic_tree, std::bind(&help_browser::on_topic_select, this));
@@ -108,19 +101,39 @@ void help_browser::pre_show()
 	on_topic_select();
 }
 
-void help_browser::add_topics_for_section(const help::section& parent_section, tree_view_node& parent_node)
+void help_browser::update_list(const std::string& filter_text) {
+	tree_view& topic_tree = find_widget<tree_view>("topic_tree");
+	topic_tree.clear();
+	add_topics_for_section(toplevel_, topic_tree.get_root_node(), filter_text);
+}
+
+bool help_browser::add_topics_for_section(const help::section& parent_section, tree_view_node& parent_node, const std::string& filter_text)
 {
+	bool topics_added = false;
+	const auto match = translation::make_ci_matcher(filter_text);
+
 	for(const help::section& section : parent_section.sections) {
 		tree_view_node& section_node = add_topic(section.id, section.title, true, parent_node);
+		bool subtopics_added = add_topics_for_section(section, section_node, filter_text);
 
-		add_topics_for_section(section, section_node);
+		if (subtopics_added || match(section.id)) {
+			if (!filter_text.empty()) {
+				section_node.unfold();
+			}
+			topics_added = true;
+		} else {
+			find_widget<tree_view>("topic_tree").remove_node(&section_node);
+		}
 	}
 
 	for(const help::topic& topic : parent_section.topics) {
-		if(topic.id.compare(0, 2, "..") != 0) {
+		if ((match(topic.id) || match(topic.title)) && (topic.id.compare(0, 2, "..") != 0)) {
 			add_topic(topic.id, topic.title, false, parent_node);
+			topics_added = true;
 		}
 	}
+
+	return topics_added;
 }
 
 tree_view_node& help_browser::add_topic(const std::string& topic_id, const std::string& topic_title,
@@ -137,6 +150,7 @@ tree_view_node& help_browser::add_topic(const std::string& topic_id, const std::
 
 	return new_node;
 }
+
 void help_browser::show_topic(std::string topic_id, bool add_to_history)
 {
 	if(topic_id.empty()) {
@@ -167,7 +181,7 @@ void help_browser::show_topic(std::string topic_id, bool add_to_history)
 		data.emplace("topic_title", item);
 
 		find_widget<label>("topic_title").set_label(topic->title);
-		find_widget<rich_label>("topic_text").set_topic(topic);
+		find_widget<rich_label>("topic_text").set_dom(topic->text.parsed_text());
 
 		invalidate_layout();
 		scrollbar_panel& scroll = find_widget<scrollbar_panel>("topic_scroll_panel");

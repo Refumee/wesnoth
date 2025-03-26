@@ -1,4 +1,4 @@
-## Version 1.19.9+dev
+## Version 1.19.10+dev
 ### Add-ons client
 ### Add-ons server
 ### Campaigns
@@ -8,11 +8,33 @@
 ### Packaging
 ### Terrain
 ### Translations
-   * Updated translations: Bengali, British English, Finnish, Italian
+   * Updated translations: British English, Chinese (Simplified), Czech, Japanese
 ### Units
 ### User interface
 ### WML Engine
 ### Miscellaneous and Bug Fixes
+
+## Version 1.19.10
+### Campaigns
+   * Fixed campaigns not using the correct map settings
+### Editor
+   * `Convert To Scenario` menu item added to `File` menu that allows converting an already opened map to a scenario.
+### Multiplayer
+   * Added the foundation for multiplayer queueing
+### Lua API
+   * Add `mvt_alias` and `def_alias` to `wesnoth.terrain_types`.
+### Packaging
+   * Boost 1.70 or later is now required
+### Translations
+   * Updated translations: Bengali, British English, Finnish, Italian
+### User interface
+   * It is now possible to search help topics by name/id in the Help Browser.
+### WML Engine
+   * `[unit]dismissable` and `[unit]block_dismiss_message` keys added that allow marking an unit as dismissable, and what message to show if user clicks `Dismiss` button in Unit Recall dialog.
+   * Added [have_side] as a conditional tag. It takes the same arguments as [filter_side]. It returns true if a side matching the SSF exists, false otherwise. Added to the schema.
+### Miscellaneous and Bug Fixes
+   * GUI.pyw: use the Windows API through the `ctypes` library to detect the user's language on Windows (#9972).
+   * Fixed persistent WML being stored in the wrong folder
 
 ## Version 1.19.9
 ### Campaigns

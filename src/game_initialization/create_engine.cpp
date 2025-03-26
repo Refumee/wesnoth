@@ -545,6 +545,15 @@ void create_engine::set_current_era_index(const std::size_t index, bool force)
 	dependency_manager_->try_era_by_index(index, force);
 }
 
+void create_engine::set_current_era_id(const std::string& id, bool force)
+{
+	std::size_t index = dependency_manager_->get_era_index(id);
+
+	current_era_index_ = index;
+
+	dependency_manager_->try_era_by_index(index, force);
+}
+
 bool create_engine::toggle_mod(const std::string& id, bool force)
 {
 	force |= state_.classification().type != campaign_type::type::multiplayer;
@@ -688,6 +697,10 @@ void create_engine::init_all_levels()
 		{
 			config data;
 			try {
+				// Only attempt to load .cfg files (.cfg extension is enforced in Editor save)
+				if (!filesystem::is_cfg(user_scenario_names_[i]))
+					continue;
+
 				read(data, *preprocess_file(filesystem::get_legacy_editor_dir() + "/scenarios/" + user_scenario_names_[i]));
 			} catch(const config::error & e) {
 				ERR_CF << "Caught a config error while parsing user made (editor) scenarios:\n" << e.message;

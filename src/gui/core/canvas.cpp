@@ -36,12 +36,11 @@
 #include "picture.hpp"
 #include "sdl/point.hpp"
 #include "sdl/rect.hpp"
+#include "sdl/surface.hpp"
 #include "sdl/texture.hpp"
 #include "sdl/utils.hpp" // blur_surface
 #include "video.hpp" // read_pixels_low_res, only used for blurring
 #include "wml_exception.hpp"
-
-#include <iostream>
 
 namespace gui2
 {
@@ -219,22 +218,18 @@ void circle_shape::draw(wfl::map_formula_callable& variables)
 	 * silly unless there has been a resize. So to optimize we should use an
 	 * extra flag or do the calculation in a separate routine.
 	 */
-
 	const int x = x_(variables);
 	const int y = y_(variables);
 	const unsigned radius = radius_(variables);
-
-	DBG_GUI_D << "Circle: drawn at " << x << ',' << y << " radius " << radius << ".";
-
 	const color_t fill_color = fill_color_(variables);
-	if(!fill_color.null() && radius) {
-		draw::disc(x, y, radius, fill_color);
+	if (!fill_color.null()) {
+		draw::cairo_disc(x, y, radius, fill_color);
 	}
 
 	const color_t border_color = border_color_(variables);
-	for(unsigned int i = 0; i < border_thickness_; i++) {
-		draw::circle(x, y, radius - i, border_color);
-	}
+	draw::cairo_circle(x, y, radius, border_color, border_thickness_);
+
+	DBG_GUI_D << "Circle: drawn at " << x << ',' << y << " radius " << radius << ".";
 }
 
 /***** ***** ***** ***** ***** IMAGE ***** ***** ***** ***** *****/
@@ -395,12 +390,6 @@ image_shape::resize_mode image_shape::get_resize_mode(const std::string& resize_
 
 namespace
 {
-/** For cases where we want a string wrapped in formula parentheses. */
-auto maybe_literal(const config::attribute_value& val, bool normal_formula)
-{
-	return typed_formula<t_string>{ normal_formula ? val : "('" + val + "')" };
-}
-
 /** Populates the attribute list from the given config child range. */
 auto parse_attributes(const config::const_child_itors& range)
 {
@@ -426,7 +415,7 @@ auto parse_attributes(const config::const_child_itors& range)
 		} else if (name == "font_size" || name == "size") {
 			add_attribute_size(text_attributes, start, end, attr["value"].to_int(font::SIZE_NORMAL));
 		} else if (name == "font_family" || name == "face") {
-			add_attribute_font_family(text_attributes, start, end, font::str_to_family_class(attr["value"]));
+			add_attribute_font_family(text_attributes, start, end, font::decode_family_class(attr["value"]));
 		} else if (name == "weight") {
 			add_attribute_weight(text_attributes, start, end, decode_text_weight(attr["value"]));
 		} else if (name == "style") {
@@ -451,12 +440,13 @@ auto parse_attributes(const config::const_child_itors& range)
 
 text_shape::text_shape(const config& cfg, wfl::action_function_symbol_table& functions)
 	: rect_bounded_shape(cfg)
-	, font_family_(font::str_to_family_class(cfg["font_family"]))
+	, font_family_(font::decode_family_class(cfg["font_family"]))
 	, font_size_(cfg["font_size"], font::SIZE_NORMAL)
 	, font_style_(decode_font_style(cfg["font_style"]))
 	, text_alignment_(cfg["text_alignment"])
 	, color_(cfg["color"])
-	, text_(maybe_literal(cfg["text"], cfg["parse_text_as_formula"].to_bool(true)))
+	, text_(cfg["text"])
+	, parse_text_as_formula_(cfg["parse_text_as_formula"].to_bool(true))
 	, text_markup_(cfg["text_markup"], false)
 	, link_aware_(cfg["text_link_aware"], false)
 	, link_color_(cfg["text_link_color"], color_t::from_hex_string("ffff00"))
@@ -483,7 +473,9 @@ void text_shape::draw(wfl::map_formula_callable& variables)
 	// We first need to determine the size of the text which need the rendered
 	// text. So resolve and render the text first and then start to resolve
 	// the other formulas.
-	const t_string text = text_(variables);
+	const auto text = parse_text_as_formula_
+		? typed_formula<t_string>{text_}(variables)
+		: text_.t_str();
 
 	if(text.empty()) {
 		DBG_GUI_D << "Text: no text to render, leave.";
@@ -560,7 +552,7 @@ void text_shape::draw(wfl::map_formula_callable& variables)
 
 /***** ***** ***** ***** ***** CANVAS ***** ***** ***** ***** *****/
 
-canvas::canvas()
+canvas::canvas(const config& cfg)
 	: shapes_()
 	, blur_depth_(0)
 	, blur_region_(sdl::empty_rect)
@@ -570,18 +562,7 @@ canvas::canvas()
 	, variables_()
 	, functions_()
 {
-}
-
-canvas::canvas(canvas&& c) noexcept
-	: shapes_(std::move(c.shapes_))
-	, blur_depth_(c.blur_depth_)
-	, blur_region_(c.blur_region_)
-	, deferred_(c.deferred_)
-	, w_(c.w_)
-	, h_(c.h_)
-	, variables_(c.variables_)
-	, functions_(c.functions_)
-{
+	parse_cfg(cfg);
 }
 
 // It would be better if the blur effect was managed at a higher level.

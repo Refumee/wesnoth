@@ -59,14 +59,16 @@ struct terrain_movement_info
 	}
 };
 
-static std::string best_str(bool best) {
+namespace {
+
+std::string best_str(bool best) {
 	std::string lang_policy = (best ? _("Best of") : _("Worst of"));
 	std::string color_policy = (best ? "green": "red");
 
 	return markup::span_color(color_policy, lang_policy);
 }
 
-static std::string format_mp_entry(const int cost, const int max_cost) {
+std::string format_mp_entry(const int cost, const int max_cost) {
 	std::stringstream str_unformatted;
 	const bool cannot = cost < max_cost;
 
@@ -96,11 +98,19 @@ static std::string format_mp_entry(const int cost, const int max_cost) {
 
 typedef t_translation::ter_list::const_iterator ter_iter;
 // Gets an english description of a terrain ter_list alias behavior: "Best of cave, hills", "Worst of Swamp, Forest" etc.
-static std::string print_behavior_description(const ter_iter& start, const ter_iter& end, const std::shared_ptr<terrain_type_data> & tdata, bool first_level = true, bool begin_best = true)
+std::string print_behavior_description(
+	const ter_iter& start,
+	const ter_iter& end,
+	const std::shared_ptr<terrain_type_data>& tdata,
+	bool first_level = true,
+	bool begin_best = true)
 {
 
 	if (start == end) return "";
-	if (*start == t_translation::MINUS || *start == t_translation::PLUS) return print_behavior_description(start+1, end, tdata, first_level, *start == t_translation::PLUS); //absorb any leading mode changes by calling again, with a new default value begin_best.
+	if (*start == t_translation::MINUS || *start == t_translation::PLUS) {
+		//absorb any leading mode changes by calling again, with a new default value begin_best.
+		return print_behavior_description(start+1, end, tdata, first_level, *start == t_translation::PLUS);
+	}
 
 	utils::optional<ter_iter> last_change_pos;
 
@@ -132,12 +142,7 @@ static std::string print_behavior_description(const ter_iter& start, const ter_i
 
 		ss << best_str(best) << " ";
 		if (!first_level) ss << "( ";
-		ss << names.at(0);
-
-		for (std::size_t i = 1; i < names.size(); i++) {
-			ss << ", " << names.at(i);
-		}
-
+		ss << utils::join(names, ", ");
 		if (!first_level) ss << " )";
 	} else {
 		std::vector<std::string> names;
@@ -155,12 +160,45 @@ static std::string print_behavior_description(const ter_iter& start, const ter_i
 		if (!first_level) ss << "( ";
 		ss << print_behavior_description(start, *last_change_pos-1, tdata, false, begin_best);
 		// Printed the (parenthesized) leading part from before the change, now print the remaining names in this group.
-		for (const std::string & s : names) {
+		for (const std::string& s : names) {
 			ss << ", " << s;
 		}
 		if (!first_level) ss << " )";
 	}
 	return ss.str();
+}
+
+std::vector<std::string> get_special_notes(const terrain_type& type) {
+	// Special notes are generated from the terrain's properties - at the moment there's no way for WML authors
+	// to add their own via a [special_note] tag.
+	std::vector<std::string> special_notes;
+
+	if(type.is_village()) {
+		special_notes.push_back(_("Villages allow any unit stationed therein to heal, or to be cured of poison."));
+	} else if(type.gives_healing() > 0) {
+		auto symbols = utils::string_map{{"amount", std::to_string(type.gives_healing())}};
+		// TRANSLATORS: special note for terrains such as the oasis; the only terrain in core with this property heals 8 hp just like a village.
+		// For the single-hitpoint variant, the wording is different because I assume the player will be more interested in the curing-poison part than the minimal healing.
+		auto message = VNGETTEXT("This terrain allows units to be cured of poison, or to heal a single hitpoint.",
+			"This terrain allows units to heal $amount hitpoints, or to be cured of poison, as if stationed in a village.",
+			type.gives_healing(), symbols);
+		special_notes.push_back(std::move(message));
+	}
+
+	if(type.is_castle()) {
+		special_notes.push_back(_("This terrain is a castle — units can be recruited onto it from a connected keep."));
+	}
+	if(type.is_keep() && type.is_castle()) {
+		// TRANSLATORS: The "this terrain is a castle" note will also be shown directly above this one.
+		special_notes.push_back(_("This terrain is a keep — a leader can recruit from this hex onto connected castle hexes."));
+	} else if(type.is_keep() && !type.is_castle()) {
+		// TRANSLATORS: Special note for a terrain, but none of the terrains in mainline do this.
+		special_notes.push_back(_("This unusual keep allows a leader to recruit while standing on it, but does not allow a leader on a connected keep to recruit onto this hex."));
+	}
+
+	return special_notes;
+}
+
 }
 
 std::string terrain_topic_generator::operator()() const {
@@ -176,10 +214,9 @@ std::string terrain_topic_generator::operator()() const {
 		ss << markup::img(type_.editor_image()) << markup::br;
 	}
 
+	ss << "\n";
 	if (!type_.help_topic_text().empty()) {
-		ss << "\n" << type_.help_topic_text().str() << "\n";
-	} else {
-		ss << "\n";
+		ss << type_.help_topic_text().str() << "\n";
 	}
 
 	std::shared_ptr<terrain_type_data> tdata = load_terrain_types_data();
@@ -189,36 +226,25 @@ std::string terrain_topic_generator::operator()() const {
 		return ss.str();
 	}
 
-	// Special notes are generated from the terrain's properties - at the moment there's no way for WML authors
-	// to add their own via a [special_note] tag.
-	std::vector<std::string> special_notes;
-
-	if(type_.is_village()) {
-		special_notes.push_back(_("Villages allow any unit stationed therein to heal, or to be cured of poison."));
-	} else if(type_.gives_healing() > 0) {
-		auto symbols = utils::string_map{{"amount", std::to_string(type_.gives_healing())}};
-		// TRANSLATORS: special note for terrains such as the oasis; the only terrain in core with this property heals 8 hp just like a village.
-		// For the single-hitpoint variant, the wording is different because I assume the player will be more interested in the curing-poison part than the minimal healing.
-		auto message = VNGETTEXT("This terrain allows units to be cured of poison, or to heal a single hitpoint.",
-			"This terrain allows units to heal $amount hitpoints, or to be cured of poison, as if stationed in a village.",
-			type_.gives_healing(), symbols);
-		special_notes.push_back(std::move(message));
+	if (type_.is_combined()) {
+		ss << "Base terrain: ";
+		const auto base_t = tdata->get_terrain_info(
+			t_translation::terrain_code(type_.number().base, t_translation::NO_LAYER));
+		ss << markup::make_link(base_t.editor_name(),
+			(base_t.hide_help() ? "." : "") + terrain_prefix + base_t.id());
+		ss << ", ";
+		ss << "Overlay terrain: ";
+		const auto overlay_t = tdata->get_terrain_info(
+			t_translation::terrain_code(t_translation::NO_LAYER, type_.number().overlay));
+		ss << markup::make_link(overlay_t.editor_name(),
+			(overlay_t.hide_help() ? "." : "") + terrain_prefix + overlay_t.id());
+		ss << "\n";
 	}
 
-	if(type_.is_castle()) {
-		special_notes.push_back(_("This terrain is a castle — units can be recruited onto it from a connected keep."));
-	}
-	if(type_.is_keep() && type_.is_castle()) {
-		// TRANSLATORS: The "this terrain is a castle" note will also be shown directly above this one.
-		special_notes.push_back(_("This terrain is a keep — a leader can recruit from this hex onto connected castle hexes."));
-	} else if(type_.is_keep() && !type_.is_castle()) {
-		// TRANSLATORS: Special note for a terrain, but none of the terrains in mainline do this.
-		special_notes.push_back(_("This unusual keep allows a leader to recruit while standing on it, but does not allow a leader on a connected keep to recruit onto this hex."));
-	}
-
-	if(!special_notes.empty()) {
+	const auto& notes = get_special_notes(type_);
+	if(!notes.empty()) {
 		ss << "\n\n" << markup::tag("header", _("Special Notes")) << "\n\n";
-		for(const auto& note : special_notes) {
+		for(const auto& note : notes) {
 			ss << font::unicode_bullet << " " << note << '\n';
 		}
 	}
@@ -244,11 +270,8 @@ std::string terrain_topic_generator::operator()() const {
 			const terrain_type& base = tdata->get_terrain_info(type_.default_base());
 
 			symbols.clear();
-			if (base.is_indivisible()) {
-				symbols["type"] = markup::make_link(base.editor_name(), ".." + terrain_prefix + base.id());
-			} else {
-				symbols["type"] = markup::make_link(base.editor_name(), terrain_prefix + base.id());
-			}
+			symbols["type"] = markup::make_link(base.editor_name(),
+				(base.is_indivisible() ? ".." : "") + terrain_prefix + base.id());
 			// TRANSLATORS: In the help for a terrain type, for example Dwarven Village is often placed on Cave Floor
 			ss << "\n" << VGETTEXT("Typical base terrain: $type", symbols);
 		}
@@ -277,6 +300,7 @@ std::string terrain_topic_generator::operator()() const {
 
 		ss << "Overlay: "     << (type_.is_overlay()   ? "Yes" : "No") << "\n";
 		ss << "Combined: "    << (type_.is_combined()  ? "Yes" : "No") << "\n";
+
 		ss << "Nonnull: "     << (type_.is_nonnull()   ? "Yes" : "No") << "\n";
 
 		ss << "Terrain string: " << type_.number() << "\n";
@@ -288,21 +312,20 @@ std::string terrain_topic_generator::operator()() const {
 
 		ss << type_.income_description();
 
-		if (type_.editor_image().empty()) { // Note: this is purely temporary to help make a different help entry
-			ss << "\nEditor Image: Empty\n";
-		} else {
-			ss << "\nEditor Image: " << type_.editor_image() << "\n";
-		}
+		ss << "\nEditor Image: ";
+		// Note: this is purely temporary to help make a different help entry
+		ss << (type_.editor_image().empty() ? "Empty" : type_.editor_image());
+		ss << "\n";
 
 		const t_translation::ter_list& underlying_mvt_terrains = tdata->underlying_mvt_terrain(type_.number());
 		ss << "\nDebug Mvt Description String:";
-		for (const t_translation::terrain_code & t : underlying_mvt_terrains) {
+		for (const t_translation::terrain_code& t : underlying_mvt_terrains) {
 			ss << " " << t;
 		}
 
 		const t_translation::ter_list& underlying_def_terrains = tdata->underlying_def_terrain(type_.number());
 		ss << "\nDebug Def Description String:";
-		for (const t_translation::terrain_code & t : underlying_def_terrains) {
+		for (const t_translation::terrain_code& t : underlying_def_terrains) {
 			ss << " " << t;
 		}
 
@@ -641,14 +664,27 @@ std::string unit_topic_generator::operator()() const {
 	ss << "\n" << markup::tag("header", _("Attacks"));
 
 	if (!type_.attacks().empty()) {
+		// Check if at least one attack has special.
+		// Otherwise the Special column will be hidden.
+		bool has_special = false;
+		for(const attack_type& attack : type_.attacks()) {
+			if (!attack.special_tooltips().empty()) {
+				has_special = true;
+			}
+		}
+
+
 		// Print headers for the table.
 		table_ss << markup::tag("row",
-			markup::tag("col", markup::bold(_("Icon"))),
+			{ {"bgcolor", "table_header"} },
+			//FIXME space/tab does not work, but nbsp does
+			//empty tags will be skipped by rich_label
+			markup::tag("col", font::nbsp),
 			markup::tag("col", markup::bold(_("Name"))),
 			markup::tag("col", markup::bold(_("Strikes"))),
 			markup::tag("col", markup::bold(_("Range"))),
 			markup::tag("col", markup::bold(_("Type"))),
-			markup::tag("col", markup::bold(_("Special"))));
+			has_special ? markup::tag("col", markup::bold(_("Special"))) : "");
 
 		// Print information about every attack.
 		for(const attack_type& attack : type_.attacks()) {
@@ -686,26 +722,28 @@ std::string unit_topic_generator::operator()() const {
 			attack_ss << markup::tag("col", markup::img(type_icon), lang_type);
 
 			// special
-			std::vector<std::pair<t_string, t_string>> specials = attack.special_tooltips();
-			if (!specials.empty()) {
-				std::stringstream specials_ss;
-				std::string lang_special = "";
-				const std::size_t specials_size = specials.size();
-				for (std::size_t i = 0; i != specials_size; ++i) {
-					const std::string ref_id = std::string("weaponspecial_")
-						+ specials[i].first.base_str();
-					lang_special = (specials[i].first);
-					specials_ss << markup::make_link(lang_special, ref_id);
-					if (i+1 != specials_size) {
-						specials_ss << ", "; //comma placed before next special
+			if (has_special) {
+				std::vector<std::pair<t_string, t_string>> specials = attack.special_tooltips();
+				if (!specials.empty()) {
+					std::stringstream specials_ss;
+					std::string lang_special = "";
+					const std::size_t specials_size = specials.size();
+					for (std::size_t i = 0; i != specials_size; ++i) {
+						const std::string ref_id = std::string("weaponspecial_")
+							+ specials[i].first.base_str();
+						lang_special = (specials[i].first);
+						specials_ss << markup::make_link(lang_special, ref_id);
+						if (i+1 != specials_size) {
+							specials_ss << ", "; //comma placed before next special
+						}
 					}
+					attack_ss << markup::tag("col", specials_ss.str());
+				} else {
+					attack_ss << markup::tag("col", font::unicode_em_dash);
 				}
-				attack_ss << markup::tag("col", specials_ss.str());
-			} else {
-				attack_ss << markup::tag("col", "none");
 			}
 
-			table_ss << markup::tag("row", attack_ss.str());
+			table_ss << markup::tag("row", { {"valign", "center"} }, attack_ss.str());
 		}
 
 		ss << markup::tag("table", table_ss.str());
@@ -740,10 +778,12 @@ std::string unit_topic_generator::operator()() const {
 
 	std::stringstream().swap(table_ss);
 	table_ss << markup::tag("row",
+		{ {"bgcolor", "table_header"} },
 		markup::tag("col", markup::bold(_("Attack Type"))),
 		markup::tag("col", markup::bold(_("Resistance"))));
 
 	utils::string_map_res dam_tab = movement_type.damage_table();
+	bool odd_row = true;
 	for(std::pair<std::string, std::string> dam_it : dam_tab) {
 		int resistance = 100;
 		try {
@@ -758,8 +798,11 @@ std::string unit_topic_generator::operator()() const {
 		const std::string lang_type = string_table["type_" + dam_it.first];
 		const std::string type_icon = "icons/profiles/" + dam_it.first + ".png~SCALE_INTO(16,16)";
 		table_ss << markup::tag("row",
+			{ {"bgcolor", (odd_row ? "table_row1" : "table_row2")} },
 			markup::tag("col", markup::img(type_icon), lang_type),
 			markup::tag("col", markup::span_color(color, resist)));
+
+		odd_row = !odd_row;
 	}
 	ss << markup::tag("table", table_ss.str());
 
@@ -779,7 +822,7 @@ std::string unit_topic_generator::operator()() const {
 		if (has_terrain_defense_caps) { row_ss << markup::tag("col", markup::bold(_("Defense Cap"))); }
 		if (has_vision)				  { row_ss << markup::tag("col", markup::bold(_("Vision Cost"))); }
 		if (has_jamming)			  { row_ss << markup::tag("col", markup::bold(_("Jamming Cost"))); }
-		table_ss << markup::tag("row", row_ss.str());
+		table_ss << markup::tag("row", { {"bgcolor", "table_header"} }, row_ss.str());
 
 		// Organize terrain movetype data
 		std::set<terrain_movement_info> terrain_moves;
@@ -811,7 +854,8 @@ std::string unit_topic_generator::operator()() const {
 		}
 
 		// Add movement table rows
-		for(const terrain_movement_info &m : terrain_moves)
+		odd_row = true;
+		for(const terrain_movement_info& m : terrain_moves)
 		{
 			std::stringstream().swap(row_ss);
 			bool high_res = false;
@@ -850,7 +894,9 @@ std::string unit_topic_generator::operator()() const {
 				row_ss << markup::tag("col", format_mp_entry(type_.jamming(), m.jamming_cost));
 			}
 
-			table_ss << markup::tag("row", row_ss.str());
+			table_ss << markup::tag("row", { {"bgcolor", (odd_row ? "table_row1" : "table_row2")} }, row_ss.str());
+
+			odd_row = !odd_row;
 		}
 
 		ss << markup::tag("table", table_ss.str());
